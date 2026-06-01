@@ -25,12 +25,40 @@ export interface ParsedFile {
   navLinks: NavLink[];
   allFunctions: FunctionDef[];
   linesOfCode: number;
+  // AST-enriched fields (populated when @babel/parser succeeds)
+  componentInfo: ComponentInfo[];
+  interfaceDefinitions: InterfaceDef[];
+  definedHooks: string[];
+  astParsed: boolean;
 }
 
 export interface ImportInfo {
   raw: string;
   isRelative: boolean;
-  names: string[];
+  names: string[];        // named imports: ['useState', 'useEffect']
+  defaultName?: string;   // default import name
+  namespaceName?: string; // namespace import: import * as X
+  isTypeOnly: boolean;    // import type { ... }
+}
+
+export interface PropDef {
+  name: string;
+  type: string;       // 'string', 'number', 'ReactNode', 'ButtonProps', …
+  required: boolean;
+}
+
+export interface ComponentInfo {
+  name: string;
+  propsTypeName?: string;  // 'ButtonProps' — cross-ref with interfaceDefinitions
+  props: PropDef[];        // resolved props (inline or from matching interface)
+  isDefaultExport: boolean;
+  isWrapped: boolean;      // memo(), forwardRef(), etc.
+  wrapperName?: string;
+}
+
+export interface InterfaceDef {
+  name: string;
+  props: PropDef[];
 }
 
 export type AnalysisStatus = 'idle' | 'reading' | 'parsing' | 'building' | 'done' | 'error';

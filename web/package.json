@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.7",
     "@dagrejs/dagre": "^1.1.4",
     "@xyflow/react": "^12.3.6",
     "lucide-react": "^0.446.0",

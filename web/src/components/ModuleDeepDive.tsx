@@ -264,6 +264,82 @@ function LogicTab({ file }: { file: ParsedFile }) {
 
   return (
     <div className="p-4 space-y-5">
+      {/* AST badge */}
+      {file.astParsed && (
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+          AST parsed — full accuracy
+        </div>
+      )}
+
+      {/* Component props (AST only) */}
+      {file.componentInfo.length > 0 && (
+        <div className="space-y-3">
+          {file.componentInfo.map(ci => (
+            <div key={ci.name} className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+              {/* Component header */}
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-800">
+                <span className="text-xs font-bold text-emerald-400 font-mono">{ci.name}</span>
+                {ci.isDefaultExport && (
+                  <span className="text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">default</span>
+                )}
+                {ci.isWrapped && (
+                  <span className="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
+                    {ci.wrapperName ?? 'wrapped'}
+                  </span>
+                )}
+                {ci.propsTypeName && ci.props.length === 0 && (
+                  <span className="text-xs text-slate-500 font-mono ml-auto">{ci.propsTypeName}</span>
+                )}
+              </div>
+              {/* Props table */}
+              {ci.props.length > 0 ? (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800">
+                      <th className="text-left px-3 py-1.5 text-slate-500 font-medium">Prop</th>
+                      <th className="text-left px-3 py-1.5 text-slate-500 font-medium">Type</th>
+                      <th className="text-left px-3 py-1.5 text-slate-500 font-medium">Req</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ci.props.map(prop => (
+                      <tr key={prop.name} className="border-b border-slate-800 last:border-0">
+                        <td className="px-3 py-1 font-mono text-slate-200">
+                          {prop.name}
+                          {!prop.required && <span className="text-slate-600">?</span>}
+                        </td>
+                        <td className="px-3 py-1 font-mono text-purple-400 truncate max-w-[100px]" title={prop.type}>
+                          {prop.type}
+                        </td>
+                        <td className="px-3 py-1">
+                          {prop.required
+                            ? <span className="text-amber-500">✓</span>
+                            : <span className="text-slate-600">–</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="px-3 py-2 text-xs text-slate-600">
+                  {ci.propsTypeName
+                    ? `Props type: ${ci.propsTypeName} (defined elsewhere)`
+                    : 'No props'}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Defined hooks (AST only) */}
+      {file.definedHooks.length > 0 && (
+        <Section icon={<span className="text-amber-400 text-xs">⚡</span>} title={`Defines (${file.definedHooks.length} hook${file.definedHooks.length > 1 ? 's' : ''})`}>
+          {file.definedHooks.map(h => <CodeTag key={h} text={h} color="#F59E0B" />)}
+        </Section>
+      )}
+
       {/* Functions */}
       {exported.length > 0 && (
         <Section icon={<FileCode size={12} className="text-slate-400" />} title={`Exported (${exported.length})`}>
@@ -310,8 +386,8 @@ function LogicTab({ file }: { file: ParsedFile }) {
         </div>
       )}
 
-      {/* Components */}
-      {file.components.length > 0 && (
+      {/* Components (fallback when no AST componentInfo) */}
+      {file.componentInfo.length === 0 && file.components.length > 0 && (
         <Section icon={<span className="text-xs">🧩</span>} title="Components">
           {file.components.map(c => <CodeTag key={c} text={c} color="#10B981" />)}
         </Section>

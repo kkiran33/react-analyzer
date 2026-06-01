@@ -47,12 +47,42 @@ export function generateSpecDoc(ctx: DocContext): string {
       ? file.exports.map(e => `- \`${e}\``).join('\n')
       : '_No exports detected_',
     '',
-    '## Components',
-    '',
-    file.components.length > 0
-      ? file.components.map(c => `- \`${c}\``).join('\n')
-      : '_None_',
-    '',
+
+    // Component props (AST-enriched)
+    ...(file.componentInfo.length > 0 ? [
+      '## Components',
+      '',
+      ...file.componentInfo.flatMap(ci => {
+        const header = `### \`${ci.name}\`${ci.isDefaultExport ? ' _(default export)_' : ''}${ci.isWrapped ? ` _(${ci.wrapperName ?? 'wrapped'})_` : ''}`;
+        if (ci.props.length > 0) {
+          const table = [
+            '| Prop | Type | Required |',
+            '|------|------|----------|',
+            ...ci.props.map(p => `| \`${p.name}${p.required ? '' : '?'}\` | \`${p.type}\` | ${p.required ? 'Yes' : 'No'} |`),
+          ].join('\n');
+          return [header, '', table, ''];
+        }
+        return [header, '', ci.propsTypeName
+          ? `_Props: \`${ci.propsTypeName}\` (see interface definitions)_`
+          : '_No props_', ''];
+      }),
+    ] : [
+      '## Components',
+      '',
+      file.components.length > 0
+        ? file.components.map(c => `- \`${c}\``).join('\n')
+        : '_None_',
+      '',
+    ]),
+
+    // Defined hooks (AST-enriched)
+    ...(file.definedHooks.length > 0 ? [
+      '## Defined Hooks',
+      '',
+      file.definedHooks.map(h => `- \`${h}\``).join('\n'),
+      '',
+    ] : []),
+
     '## Custom Hooks Used',
     '',
     file.hooks.length > 0
@@ -68,7 +98,11 @@ export function generateSpecDoc(ctx: DocContext): string {
     `## Local Dependencies (${localDeps.length})`,
     '',
     localDeps.length > 0
-      ? localDeps.map(d => `- \`${d.name}\` — *${FILE_TYPE_CONFIG[d.type]?.label ?? d.type}*`).join('\n')
+      ? localDeps.map(d => {
+          const imp = file.imports.find(i => i.raw.includes(d.name));
+          const names = imp?.names?.length ? ` { ${imp.names.join(', ')} }` : '';
+          return `- \`${d.name}\`${names} — *${FILE_TYPE_CONFIG[d.type]?.label ?? d.type}*`;
+        }).join('\n')
       : '_None_',
     '',
     `## External Packages (${externalImports.length})`,
