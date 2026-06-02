@@ -1,10 +1,36 @@
-import { Search, Eye, EyeOff } from 'lucide-react';
+import { Search, Eye, EyeOff, Download } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
 import { FILE_TYPE_CONFIG, type FileType } from '@/types/graph';
+import {
+  generateModuleDiagram,
+  generateJourneyDiagram,
+  generateClassDiagram,
+  downloadPlantUml,
+} from '@/lib/plantUmlGenerator';
 
 const TYPE_ORDER: FileType[] = [
   'page', 'component', 'hook', 'store', 'service', 'router', 'config', 'util', 'test',
 ];
+
+function DiagramDownload({ label, desc, filename, generate }: {
+  label: string; desc: string; filename: string; generate: () => string;
+}) {
+  return (
+    <div className="p-3 border-t border-slate-800 mt-auto flex-shrink-0">
+      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">PlantUML</p>
+      <button
+        onClick={() => downloadPlantUml(filename, generate())}
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-pink-900 rounded-md text-slate-400 hover:text-pink-300 transition-colors text-left"
+      >
+        <Download size={11} className="flex-shrink-0" />
+        <div className="min-w-0">
+          <div className="font-medium truncate">{label}</div>
+          <div className="text-slate-600 truncate">{desc}</div>
+        </div>
+      </button>
+    </div>
+  );
+}
 
 export function Sidebar() {
   const status = useGraphStore((s) => s.status);
@@ -75,6 +101,12 @@ export function Sidebar() {
           );
         })}
       </div>
+      <DiagramDownload
+        label="Module Map"
+        desc="All files + import dependencies"
+        filename="module-map.puml"
+        generate={() => generateModuleDiagram(files)}
+      />
     </div>
   );
 }
@@ -107,6 +139,12 @@ function JourneySidebar({ files }: { files: Map<string, import('@/types/graph').
           <p>Badge shows nesting depth.</p>
         </div>
       </div>
+      <DiagramDownload
+        label="Journey Map"
+        desc="Routes as state machine"
+        filename="journey-map.puml"
+        generate={() => generateJourneyDiagram(files)}
+      />
     </div>
   );
 }
@@ -149,6 +187,12 @@ function FunctionsSidebar({ files }: { files: Map<string, import('@/types/graph'
           </div>
         ))}
       </div>
+      <DiagramDownload
+        label="Interface Map"
+        desc="TypeScript interfaces + components"
+        filename="interface-map.puml"
+        generate={() => generateClassDiagram(files)}
+      />
     </div>
   );
 }

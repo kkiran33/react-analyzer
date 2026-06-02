@@ -8,6 +8,7 @@ import { useGraphStore } from '@/store/useGraphStore';
 import { FILE_TYPE_CONFIG, type ParsedFile, type FunctionDef } from '@/types/graph';
 import { computeImpact } from '@/lib/impactAnalyzer';
 import { generateSpecDoc, generateBRD, generateSITCases, generateUATCases, downloadMarkdown } from '@/lib/docGenerator';
+import { generateFileDiagram, downloadPlantUml } from '@/lib/plantUmlGenerator';
 
 type TabId = 'overview' | 'logic' | 'impact' | 'spec' | 'generate';
 
@@ -577,15 +578,52 @@ function GenerateTab({ file, files, metrics }: { file: ParsedFile; files: Map<st
     },
   ];
 
+  const DIAGRAMS = [
+    {
+      label: 'Component Diagram',
+      desc: 'Component + props table + all imports as a dependency graph',
+      fn: () => generateFileDiagram(file, files),
+      filename: `${file.name}-diagram.puml`,
+      color: '#EC4899',
+    },
+  ];
+
   return (
     <div className="p-4 space-y-3">
-      <p className="text-xs text-slate-500 mb-4">
-        Generate template-based markdown documents from static analysis of <span className="font-mono text-slate-300">{file.name}</span>.
+      <p className="text-xs text-slate-500 mb-2">
+        Static analysis of <span className="font-mono text-slate-300">{file.name}</span>.
       </p>
+
+      {/* Markdown docs */}
+      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Documents</div>
       {DOCS.map(({ label, desc, fn, filename, color }) => (
         <button
           key={label}
           onClick={() => downloadMarkdown(filename, fn())}
+          className="w-full flex items-start gap-3 p-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors text-left"
+        >
+          <div style={{ background: color + '20', color }} className="p-1.5 rounded flex-shrink-0 mt-0.5">
+            <Download size={13} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-slate-200">{label}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
+            <div className="text-xs font-mono text-slate-600 mt-1">{filename}</div>
+          </div>
+        </button>
+      ))}
+
+      {/* PlantUML diagrams */}
+      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mt-4 mb-1 pt-3 border-t border-slate-800">
+        PlantUML Diagrams
+      </div>
+      <p className="text-xs text-slate-600 mb-2">
+        Open in VS Code (PlantUML extension) or paste at plantuml.com/plantuml
+      </p>
+      {DIAGRAMS.map(({ label, desc, fn, filename, color }) => (
+        <button
+          key={label}
+          onClick={() => downloadPlantUml(filename, fn())}
           className="w-full flex items-start gap-3 p-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors text-left"
         >
           <div style={{ background: color + '20', color }} className="p-1.5 rounded flex-shrink-0 mt-0.5">
