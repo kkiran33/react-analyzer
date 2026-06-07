@@ -1,6 +1,6 @@
 import { Search, Eye, EyeOff, Download } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
-import { FILE_TYPE_CONFIG, type FileType } from '@/types/graph';
+import { FILE_TYPE_CONFIG, typeLabel, type FileType } from '@/types/graph';
 import {
   generateModuleDiagram,
   generateJourneyDiagram,
@@ -36,6 +36,7 @@ export function Sidebar() {
   const status = useGraphStore((s) => s.status);
   const view = useGraphStore((s) => s.view);
   const files = useGraphStore((s) => s.files);
+  const language = useGraphStore((s) => s.language);
   const enabledTypes = useGraphStore((s) => s.enabledTypes);
   const searchQuery = useGraphStore((s) => s.searchQuery);
   const toggleType = useGraphStore((s) => s.toggleType);
@@ -95,7 +96,7 @@ export function Sidebar() {
               }`}
             >
               <span style={{ background: cfg.color }} className="w-2.5 h-2.5 rounded-full flex-shrink-0" />
-              <span className="flex-1 text-slate-200 font-medium">{cfg.label}</span>
+              <span className="flex-1 text-slate-200 font-medium">{typeLabel(type, language)}</span>
               <span className="text-slate-500 tabular-nums">{count}</span>
             </button>
           );

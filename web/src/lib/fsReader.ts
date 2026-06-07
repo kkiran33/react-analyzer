@@ -1,10 +1,15 @@
+import { LANGUAGE_CONFIG, type Language } from '@/types/graph';
+
 const SKIP_DIRS = new Set([
+  // web
   'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
   'out', '.turbo', 'coverage', '.cache', '__pycache__', '.vercel',
   '.expo', 'storybook-static',
+  // native (iOS / Android)
+  'Pods', 'Carthage', 'DerivedData', '.swiftpm', '.gradle', '.idea',
+  'gradle', 'captures', '.cxx',
 ]);
 
-const CODE_EXTENSIONS = new Set(['ts', 'tsx', 'js', 'jsx']);
 const MAX_FILES = 1500;
 
 export interface ReadResult {
@@ -13,14 +18,16 @@ export interface ReadResult {
 }
 
 export async function readFolder(
+  language: Language = 'react',
   onProgress?: (count: number) => void,
 ): Promise<ReadResult> {
   const dirHandle = await (window as unknown as Window & {
     showDirectoryPicker: (opts?: { mode?: string }) => Promise<FileSystemDirectoryHandle>;
   }).showDirectoryPicker({ mode: 'read' });
 
+  const extensions = new Set(LANGUAGE_CONFIG[language].extensions);
   const files = new Map<string, string>();
-  await walkDir(dirHandle, '', files, onProgress);
+  await walkDir(dirHandle, '', files, extensions, onProgress);
 
   return { files, rootName: dirHandle.name };
 }
@@ -29,6 +36,7 @@ async function walkDir(
   dir: FileSystemDirectoryHandle,
   prefix: string,
   files: Map<string, string>,
+  extensions: Set<string>,
   onProgress?: (count: number) => void,
 ): Promise<void> {
   if (files.size >= MAX_FILES) return;
@@ -41,11 +49,11 @@ async function walkDir(
 
     if (handle.kind === 'directory') {
       if (!SKIP_DIRS.has(name) && !name.startsWith('.')) {
-        await walkDir(handle as FileSystemDirectoryHandle, path, files, onProgress);
+        await walkDir(handle as FileSystemDirectoryHandle, path, files, extensions, onProgress);
       }
     } else if (handle.kind === 'file') {
       const ext = name.split('.').pop()?.toLowerCase() ?? '';
-      if (CODE_EXTENSIONS.has(ext)) {
+      if (extensions.has(ext)) {
         try {
           const file = await (handle as FileSystemFileHandle).getFile();
           files.set(path, await file.text());

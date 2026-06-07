@@ -1,11 +1,17 @@
-import type { ParsedFile, ImportInfo, NavLink, FunctionDef, TypeOverride } from '@/types/graph';
+import type { ParsedFile, ImportInfo, NavLink, FunctionDef, TypeOverride, Language } from '@/types/graph';
 import { classifyFile } from './classifier';
 import { parseAST } from './astParser';
+import { parseNativeFiles } from './nativeParser';
 
 export function parseFiles(
   fileMap: Map<string, string>,
   overrides?: TypeOverride,
+  language: Language = 'react',
 ): Map<string, ParsedFile> {
+  if (language === 'swift' || language === 'kotlin') {
+    return parseNativeFiles(fileMap, language, overrides);
+  }
+
   const parsed = new Map<string, ParsedFile>();
   for (const [path, content] of fileMap) {
     parsed.set(path, parseFile(path, content, overrides));

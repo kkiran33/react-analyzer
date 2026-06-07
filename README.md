@@ -1,6 +1,22 @@
-# React Analyzer
+# Module Analyzer
 
-A browser-based static analysis tool for React codebases. Open any React project folder and instantly get an interactive visual map of your modules, pages, components, hooks, dependencies, and technical debt — with no server, no AI, and no configuration needed.
+A browser-based static analysis tool for **React, iOS (Swift), and Android (Kotlin)** codebases. Open any project folder and instantly get an interactive visual map of its modules, screens, navigation flow, state, dependencies, and technical debt — with no server, no AI, and no configuration needed.
+
+## Entry points
+
+On launch you pick a platform card:
+
+| Entry point | Reads | Maps |
+|-------------|-------|------|
+| **React / Web** | `.ts .tsx .js .jsx` | Pages, components, hooks, stores, API services — graph from import paths |
+| **iOS · Swift** | `.swift` | Screens (VC/SwiftUI), ViewModels, coordinators, state/repos, networking |
+| **Android · Kotlin** | `.kt .kts` | Activities/Fragments/Composables, ViewModels, navigation, repositories, Retrofit APIs |
+
+All three feed the **same four views** (Files / Journey / Functions / Tech Debt) and the same Module Deep-Dive panel.
+
+### How native analysis works (no AST library, no model)
+
+Swift and Kotlin `import` statements are *module-level*, so — unlike React — they can't drive a file dependency graph. Instead the native analyzer links files by **symbol reference**: every top-level type a file declares (`class` / `struct` / `enum` / `protocol` / `object` / `interface`) is registered, then any other file that mentions that type name gets a dependency edge. Screens additionally get a synthetic `/ScreenName` route, and navigation calls (`pushViewController`, `NavigationLink`, `startActivity`, fragment transactions) become edges in the **Journey** view — so you get a real screen-flow map. The same `FileType` slots are reused with native labels (ViewModel, State/Repo, Navigation, …).
 
 ## Features
 

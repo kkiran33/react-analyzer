@@ -5,3 +5,7 @@ build/
 *.local
 .env
 .env.*
+
+# TypeScript incremental build cache
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo

@@ -61,6 +61,17 @@ export interface InterfaceDef {
   props: PropDef[];
 }
 
+export type Language = 'react' | 'swift' | 'kotlin';
+
+export const LANGUAGE_CONFIG: Record<
+  Language,
+  { label: string; sublabel: string; extensions: string[]; emoji: string }
+> = {
+  react:  { label: 'React / Web',   sublabel: 'TypeScript · JSX',   extensions: ['ts', 'tsx', 'js', 'jsx'], emoji: '⚛️' },
+  swift:  { label: 'iOS · Swift',   sublabel: 'UIKit · SwiftUI',     extensions: ['swift'],                  emoji: '' },
+  kotlin: { label: 'Android · Kotlin', sublabel: 'Compose · Views',  extensions: ['kt', 'kts'],              emoji: '🤖' },
+};
+
 export type AnalysisStatus = 'idle' | 'reading' | 'parsing' | 'building' | 'done' | 'error';
 
 export type ViewMode = 'files' | 'journey' | 'functions' | 'techdebt';
@@ -122,3 +133,25 @@ export const FILE_TYPE_CONFIG: Record<
   util:      { label: 'Util',      color: '#64748B', bg: '#1E293B', dimBg: '#0f172a' },
   test:      { label: 'Test',      color: '#4B5563', bg: '#111827', dimBg: '#0a0f18' },
 };
+
+// Native (Swift / Kotlin) reuse the same FileType slots & colors but with
+// platform-appropriate labels. The `hook` slot holds ViewModels/Presenters,
+// `store` holds Repositories/State, `router` holds Coordinators/Navigation, etc.
+const NATIVE_TYPE_LABELS: Partial<Record<FileType, string>> = {
+  page:      'Screen',
+  component: 'Component',
+  hook:      'ViewModel',
+  store:     'State / Repo',
+  service:   'Network',
+  router:    'Navigation',
+  config:    'Config',
+  util:      'Model / Util',
+  test:      'Test',
+};
+
+export function typeLabel(type: FileType, language: Language): string {
+  if (language === 'swift' || language === 'kotlin') {
+    return NATIVE_TYPE_LABELS[type] ?? FILE_TYPE_CONFIG[type].label;
+  }
+  return FILE_TYPE_CONFIG[type].label;
+}

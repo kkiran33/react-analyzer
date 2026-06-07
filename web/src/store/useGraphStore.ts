@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import type {
-  AnalysisStatus, FileType, ParsedFile, ViewMode,
+  AnalysisStatus, FileType, Language, ParsedFile, ViewMode,
   TechDebtMetrics, TypeOverride,
 } from '@/types/graph';
 
@@ -9,6 +9,7 @@ interface GraphStore {
   status: AnalysisStatus;
   fileCount: number;
   rootName: string;
+  language: Language;
   error: string | null;
 
   files: Map<string, ParsedFile>;
@@ -24,6 +25,7 @@ interface GraphStore {
 
   setView: (v: ViewMode) => void;
   setStatus: (s: AnalysisStatus) => void;
+  setLanguage: (l: Language) => void;
   setFileCount: (n: number) => void;
   setGraph: (files: Map<string, ParsedFile>, nodes: Node[], edges: Edge[], rootName: string) => void;
   setTechDebt: (m: Map<string, TechDebtMetrics>) => void;
@@ -44,6 +46,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
   status: 'idle',
   fileCount: 0,
   rootName: '',
+  language: 'react',
   error: null,
   files: new Map(),
   nodes: [],
@@ -57,6 +60,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
 
   setView: (view) => set({ view, selectedNodeId: null }),
   setStatus: (status) => set({ status }),
+  setLanguage: (language) => set({ language }),
   setFileCount: (fileCount) => set({ fileCount }),
 
   setGraph: (files, nodes, edges, rootName) =>
@@ -88,10 +92,11 @@ export const useGraphStore = create<GraphStore>((set) => ({
   setSearch: (searchQuery) => set({ searchQuery }),
 
   reset: () =>
-    set({
+    set((s) => ({
       status: 'idle',
       fileCount: 0,
       rootName: '',
+      language: s.language,
       error: null,
       files: new Map(),
       nodes: [],
@@ -101,5 +106,5 @@ export const useGraphStore = create<GraphStore>((set) => ({
       selectedNodeId: null,
       enabledTypes: new Set(ALL_TYPES),
       searchQuery: '',
-    }),
+    })),
 }));

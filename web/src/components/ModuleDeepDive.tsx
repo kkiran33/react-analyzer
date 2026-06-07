@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
-import { FILE_TYPE_CONFIG, type ParsedFile, type FunctionDef } from '@/types/graph';
+import { FILE_TYPE_CONFIG, typeLabel, type ParsedFile, type FunctionDef } from '@/types/graph';
 import { computeImpact } from '@/lib/impactAnalyzer';
 import { generateSpecDoc, generateBRD, generateSITCases, generateUATCases, downloadMarkdown } from '@/lib/docGenerator';
 import { generateFileDiagram, downloadPlantUml } from '@/lib/plantUmlGenerator';
@@ -56,6 +56,7 @@ function getHookPurpose(name: string): string {
 export function ModuleDeepDive() {
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const files = useGraphStore((s) => s.files);
+  const language = useGraphStore((s) => s.language);
   const techDebt = useGraphStore((s) => s.techDebt);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
 
@@ -82,7 +83,7 @@ export function ModuleDeepDive() {
         <div className="flex-1 min-w-0 mr-2">
           <div className="flex items-center gap-2 mb-1">
             <span style={{ background: cfg.color, color: '#000' }} className="text-xs font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
-              {cfg.label}
+              {typeLabel(file.type, language)}
             </span>
             {metrics && (
               <span className="text-xs font-bold" style={{ color: debtColor(metrics.debtScore) }}>
@@ -422,6 +423,7 @@ function FnRow({ fn }: { fn: FunctionDef }) {
 
 function ImpactTab({ file, files }: { file: ParsedFile; files: Map<string, ParsedFile> }) {
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
+  const language = useGraphStore((s) => s.language);
   const [showAll, setShowAll] = useState(false);
 
   const impact = useMemo(() => computeImpact(file.id, files), [file.id, files]);
@@ -456,7 +458,7 @@ function ImpactTab({ file, files }: { file: ParsedFile; files: Map<string, Parse
               <button key={id} onClick={() => setSelectedNode(id)}
                 className="block w-full text-left truncate text-xs font-mono px-2 py-1 rounded hover:bg-slate-800 transition-colors">
                 <span style={{ color: FILE_TYPE_CONFIG[f.type].color }}>{f.name}</span>
-                <span className="text-slate-600 ml-1">({FILE_TYPE_CONFIG[f.type].label})</span>
+                <span className="text-slate-600 ml-1">({typeLabel(f.type, language)})</span>
               </button>
             ) : null;
           })}
