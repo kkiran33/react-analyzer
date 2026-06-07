@@ -248,87 +248,164 @@ export function generateJourneyDiagram(files: Map<string, ParsedFile>): string {
     '',
   ];
 
-  // Collect routes
-  const routeMap = new Map<string, { component: string; isProtected: boolean; fileId: string }>();
-  for (const file of files.values()) {
-    const isProtected = file.imports.some(i => /PrivateRoute|AuthRoute|RequireAuth|ProtectedRoute/.test(i.raw));
-    for (const route of file.routes) {
-      if (!routeMap.has(route)) {
-        routeMap.set(route, {
-          component: file.componentInfo[0]?.name ?? file.components[0] ?? file.name,
-          isProtected,
-          fileId: file.id,
-        });
-      }
-    }
-  }
+  // Collect unique routes
+  const routes = [...new Set([...files.values()].flatMap(f => f.routes))];
 
-  if (routeMap.size === 0) {
+  if (routes.length === 0) {
     out.push('note "No routes detected in this codebase."');
     out.push('@enduml');
     return out.join('\n');
   }
 
+  // Collision-free, stable state id per route
+  const stateIds = new Map<string, string>();
+  const usedIds = new Set<string>();
+  for (const route of routes) {
+    let base = 'r_' + route.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (base === 'r_') base = 'r_root';
+    if (route.includes('*')) base = 'r_wildcard';
+    let candidate = base, n = 2;
+    while (usedIds.has(candidate)) candidate = `${base}_${n++}`;
+    usedIds.add(candidate);
+    stateIds.set(route, candidate);
+  }
+  const sid = (route: string) => stateIds.get(route) ?? 'r_unknown';
+
+  // Map each route to the page file that renders it (by naming convention)
+  const ownerFile = new Map<string, ParsedFile>();
+  for (const route of routes) {
+    const file = matchRouteToFile(route, files);
+    if (file) ownerFile.set(route, file);
+  }
+
   // Emit states
   out.push('[*] --> entry : app start');
   out.push('');
-  for (const [route, info] of routeMap) {
-    const stateId = id(route || 'root');
-    const label = route || '/';
-    const protTag = info.isProtected ? '  [AUTH]' : '';
-    out.push(`state "${label}${protTag}" as ${stateId} {`);
-    out.push(`  ${info.component}`);
+  for (const route of routes) {
+    const file = ownerFile.get(route);
+    const component = file?.componentInfo[0]?.name ?? file?.components[0] ?? file?.name ?? 'route';
+    const guarded = isRouteGuarded(route, file, files);
+    const protTag = guarded ? '  <<auth>>' : '';
+    out.push(`state "${route || '/'}${protTag}" as ${sid(route)} {`);
+    out.push(`  ${component}`);
     out.push('}');
   }
-
   out.push('');
 
-  // Entry → most-root route (shortest path or /)
-  const rootRoute = routeMap.has('/') ? '/' : [...routeMap.keys()].sort((a, b) => a.length - b.length)[0] ?? '';
-  if (rootRoute) out.push(`entry --> ${id(rootRoute)} : initial load`);
+  // Entry → root route (/ or shortest)
+  const rootRoute = routes.includes('/') ? '/' : [...routes].sort((a, b) => a.length - b.length)[0];
+  if (rootRoute) out.push(`entry --> ${sid(rootRoute)} : initial load`);
   out.push('');
 
-  // Navigation transitions
+  // Navigation transitions: from a route, follow its page's import subtree,
+  // collect navLinks, map each target back to a route.
   const transSet = new Set<string>();
-  for (const file of files.values()) {
-    const ownerRoutes = file.routes;
-    if (ownerRoutes.length === 0) continue;
-
-    for (const link of file.navLinks) {
-      const target = link.target;
-      if (!routeMap.has(target)) continue;
-
-      for (const srcRoute of ownerRoutes) {
-        const src = id(srcRoute);
-        const tgt = id(target);
-        if (src === tgt) continue;
-        const key = `${src}-->${tgt}`;
-        if (!transSet.has(key)) {
-          transSet.add(key);
-          const label = link.type === 'navigate' ? 'navigate()' : '<Link>';
-          out.push(`${src} --> ${tgt} : ${label}`);
-        }
+  for (const route of routes) {
+    const file = ownerFile.get(route);
+    if (!file) continue;
+    const subtree = collectSubtree(file, files, 3);
+    for (const member of subtree) {
+      for (const link of member.navLinks) {
+        const target = matchTargetRoute(link.target, routes);
+        if (!target || target === route) continue;
+        const key = `${sid(route)}->${sid(target)}->${link.type}`;
+        if (transSet.has(key)) continue;
+        transSet.add(key);
+        const label = link.type === 'navigate' ? 'navigate()' : '<Link>';
+        out.push(`${sid(route)} --> ${sid(target)} : ${label}`);
       }
     }
   }
+  out.push('');
 
-  // Route nesting (parent → child)
+  // Route nesting (parent → child) as dashed
   const nestSet = new Set<string>();
-  for (const [route] of routeMap) {
+  for (const route of routes) {
     const segments = route.split('/').filter(Boolean);
     if (segments.length < 2) continue;
     const parent = '/' + segments.slice(0, -1).join('/');
-    if (!routeMap.has(parent)) continue;
-    const key = `${id(parent)}..>${id(route)}`;
-    if (!nestSet.has(key)) {
-      nestSet.add(key);
-      out.push(`${id(parent)} ..> ${id(route)} : nested`);
-    }
+    if (!routes.includes(parent)) continue;
+    const key = `${sid(parent)}..>${sid(route)}`;
+    if (nestSet.has(key)) continue;
+    nestSet.add(key);
+    out.push(`${sid(parent)} ..> ${sid(route)} : nested`);
   }
 
   out.push('');
   out.push('@enduml');
   return out.join('\n');
+}
+
+/** Match a route path to the page file that renders it, by naming convention. */
+function matchRouteToFile(route: string, files: Map<string, ParsedFile>): ParsedFile | undefined {
+  const segs = route.split('/').filter(Boolean);
+  const last = segs[segs.length - 1] ?? '';
+  // /fire-progress -> fireprogress
+  const slug = last.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+
+  const candidates = [...files.values()].filter(f => f.type !== 'test');
+  const norm = (s: string) => s.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+
+  // Root route → Landing/Home/Index/App
+  if (segs.length === 0 || route === '/') {
+    const rootNames = ['landing', 'home', 'index', 'app', 'root', 'dashboard'];
+    for (const rn of rootNames) {
+      const hit = candidates.find(f => f.type === 'page' && norm(f.name).includes(rn))
+        ?? candidates.find(f => norm(f.name) === rn);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+
+  // Exact-ish: page file whose normalized name contains the slug
+  const pages = candidates.filter(f => f.type === 'page');
+  return pages.find(f => norm(f.name) === slug || norm(f.name) === slug + 'page')
+    ?? pages.find(f => norm(f.name).includes(slug) && slug.length > 2)
+    ?? candidates.find(f => norm(f.name).includes(slug) && slug.length > 2);
+}
+
+/** BFS over resolvedImports from a root file, up to depth. */
+function collectSubtree(root: ParsedFile, files: Map<string, ParsedFile>, depth: number): ParsedFile[] {
+  const seen = new Set<string>([root.id]);
+  const result: ParsedFile[] = [root];
+  let frontier = [root];
+  for (let d = 0; d < depth; d++) {
+    const next: ParsedFile[] = [];
+    for (const f of frontier) {
+      for (const dep of f.resolvedImports) {
+        if (seen.has(dep)) continue;
+        const df = files.get(dep);
+        if (!df) continue;
+        seen.add(dep);
+        result.push(df);
+        next.push(df);
+      }
+    }
+    frontier = next;
+  }
+  return result;
+}
+
+/** Resolve a navLink target to a known route (exact, dynamic, or prefix). */
+function matchTargetRoute(target: string, routes: string[]): string | null {
+  if (routes.includes(target)) return target;
+  for (const r of routes) {
+    const rp = r.split('/'), tp = target.split('/');
+    if (rp.length === tp.length && rp.every((p, i) => p.startsWith(':') || p === tp[i])) return r;
+  }
+  const parts = target.split('/').filter(Boolean);
+  for (let i = parts.length; i > 0; i--) {
+    const candidate = '/' + parts.slice(0, i).join('/');
+    if (routes.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** A route is guarded only if its own page subtree imports a guard component. */
+function isRouteGuarded(route: string, file: ParsedFile | undefined, files: Map<string, ParsedFile>): boolean {
+  if (!file) return false;
+  const guard = /PrivateRoute|RequireAuth|ProtectedRoute|AuthGuard|withAuth/;
+  return collectSubtree(file, files, 2).some(f => f.imports.some(i => guard.test(i.raw)));
 }
 
 // ─── 4. TypeScript class / interface diagram ──────────────────────────────────
