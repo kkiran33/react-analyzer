@@ -17,6 +17,8 @@ import { classifyNative } from './nativeClassifier';
 interface NativeExtract {
   decls: string[];        // top-level type names declared here (graph nodes own these)
   refs: Set<string>;      // capitalized identifiers referenced (candidate edges)
+  extMethods: string[];   // methods this file adds via extension (Swift) / receiver fn (Kotlin)
+  calls: Set<string>;     // .method( call names made in this file (candidate ext-method edges)
 }
 
 export function parseNativeFiles(
@@ -26,9 +28,10 @@ export function parseNativeFiles(
 ): Map<string, ParsedFile> {
   const parsed = new Map<string, ParsedFile>();
   const extracts = new Map<string, NativeExtract>();
-  const declaredBy = new Map<string, string>(); // typeName → owning fileId (first wins)
+  const declaredBy = new Map<string, string>();  // typeName → owning fileId (first wins)
+  const extMethodBy = new Map<string, string>(); // extension method name → owning fileId
 
-  // Pass 1 — parse each file, collect declared symbols.
+  // Pass 1 — parse each file, collect declared symbols + extension methods.
   for (const [path, content] of fileMap) {
     const { file, extract } = parseNativeFile(path, content, language, overrides);
     parsed.set(path, file);
@@ -36,14 +39,23 @@ export function parseNativeFiles(
     for (const d of extract.decls) {
       if (!declaredBy.has(d)) declaredBy.set(d, path);
     }
+    for (const em of extract.extMethods) {
+      if (!extMethodBy.has(em)) extMethodBy.set(em, path);
+    }
   }
 
-  // Pass 2 — resolve symbol references to declaring files → dependency edges.
+  // Pass 2 — resolve edges by (a) type reference and (b) extension-method call.
+  // Extensions declare no top-level type, so type-reference linking alone misses
+  // them; method-call linking connects a caller to the file providing the method.
   for (const [path, file] of parsed) {
-    const { refs } = extracts.get(path)!;
+    const { refs, calls } = extracts.get(path)!;
     const targets = new Set<string>();
     for (const name of refs) {
       const owner = declaredBy.get(name);
+      if (owner && owner !== path) targets.add(owner);
+    }
+    for (const call of calls) {
+      const owner = extMethodBy.get(call);
       if (owner && owner !== path) targets.add(owner);
     }
     file.resolvedImports = [...targets];
@@ -69,6 +81,8 @@ function parseNativeFile(
 
   const decls = language === 'swift' ? swiftDecls(src) : kotlinDecls(src);
   const refs = collectRefs(src, new Set(decls));
+  const extMethods = language === 'swift' ? swiftExtensionMethods(src) : kotlinExtensionFunctions(src);
+  const calls = collectCalls(src);
   const imports = parseImports(src);
   const allFunctions = language === 'swift'
     ? swiftFunctions(src, decls)
@@ -106,7 +120,7 @@ function parseNativeFile(
     astParsed: false,
   };
 
-  return { file, extract: { decls, refs } };
+  return { file, extract: { decls, refs, extMethods, calls } };
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -142,6 +156,54 @@ function collectRefs(src: string, own: Set<string>): Set<string> {
     if (!own.has(m[1])) refs.add(m[1]);
   }
   return refs;
+}
+
+// Collect `.methodName(` call sites (lowercase-initial → instance/extension calls).
+// Matched against project extension methods in pass 2 to link extension files,
+// which declare no top-level type and so are invisible to type-reference linking.
+function collectCalls(src: string): Set<string> {
+  const calls = new Set<string>();
+  const re = /\.([a-z][A-Za-z0-9_]*)\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) calls.add(m[1]);
+  return calls;
+}
+
+// Swift: method names declared inside `extension Foo { ... }` blocks.
+// Brace-matched so nested closures/types in the body don't end the block early.
+function swiftExtensionMethods(src: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const extRe = /\bextension\s+[A-Za-z_][A-Za-z0-9_.]*(?:\s*:[^{]+)?\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = extRe.exec(src)) !== null) {
+    const open = m.index + m[0].length - 1;
+    let depth = 0, i = open;
+    for (; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) break; }
+    }
+    const body = src.slice(open + 1, i);
+    const fnRe = /\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)/g;
+    let fm: RegExpExecArray | null;
+    while ((fm = fnRe.exec(body)) !== null) {
+      if (!seen.has(fm[1])) { seen.add(fm[1]); out.push(fm[1]); }
+    }
+    extRe.lastIndex = i; // resume scanning after this block
+  }
+  return out;
+}
+
+// Kotlin: top-level extension functions `fun Receiver.method(...)`.
+function kotlinExtensionFunctions(src: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\bfun\s+(?:<[^>]+>\s*)?[A-Za-z_][A-Za-z0-9_<>,.\s?]*\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    if (!seen.has(m[1])) { seen.add(m[1]); out.push(m[1]); }
+  }
+  return out;
 }
 
 // ─── Swift extraction ─────────────────────────────────────────────────────────
