@@ -90,10 +90,11 @@ function parseNativeFile(
 
   const type = classifyNative(path, name, content, language, overrides);
 
-  // Screens get a synthetic route (/TypeName) so the Journey view can render the
-  // navigation flow; navLinks point at the /TargetType of screens being opened.
-  const primary = decls[0] ?? name;
-  const routes = type === 'page' ? [`/${primary}`] : [];
+  // Screens get a synthetic route so the Journey view can render the flow.
+  // Use the file name, not decls[0]: Compose screens are @Composable functions,
+  // so the only declared *class* is often a PreviewParameterProvider (tooling) —
+  // deriving the route from that produced bogus names like /FooPreviewParamProvider.
+  const routes = type === 'page' ? [`/${name}`] : [];
   const navLinks = language === 'swift' ? swiftNavLinks(src) : kotlinNavLinks(src);
 
   const exports = [...new Set([...decls, ...allFunctions.filter(f => f.isExported).map(f => f.name)])];
@@ -314,5 +315,11 @@ function kotlinNavLinks(src: string): NavLink[] {
   // Fragment transactions: replace/add(..., SomeFragment())
   const fragRe = /\.(?:replace|add)\s*\([^,)]*,\s*([A-Z][A-Za-z0-9_]*Fragment)\s*\(/g;
   while ((m = fragRe.exec(src)) !== null) add(m[1], 'navigate');
+  // Compose Navigation: navController.navigate(Screen.Foo.route / Foo.createRoute(...))
+  const composeObj = /\bnavigate\s*\(\s*(?:[A-Za-z_][\w]*\.)*([A-Z][A-Za-z0-9_]*)\.(?:route|createRoute)\b/g;
+  while ((m = composeObj.exec(src)) !== null) add(m[1], 'navigate');
+  // Compose Navigation with a string route literal: navigate("plant_detail/{id}")
+  const composeStr = /\bnavigate\s*\(\s*"([^"/{]+)/g;
+  while ((m = composeStr.exec(src)) !== null) add(m[1], 'link');
   return links;
 }
