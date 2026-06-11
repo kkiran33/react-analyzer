@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
-import { ChevronUp, ChevronDown, AlertTriangle, XCircle, CheckCircle } from 'lucide-react';
+import { useState, useMemo, Fragment } from 'react';
+import { ChevronUp, ChevronDown, ChevronRight, AlertTriangle, XCircle, CheckCircle, ArrowUpRight } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
 import { FILE_TYPE_CONFIG, type TechDebtMetrics, type ParsedFile } from '@/types/graph';
+import { DebtFindings } from './DebtFindings';
 
 type SortKey = 'name' | 'type' | 'linesOfCode' | 'fanIn' | 'fanOut' | 'hasTest' | 'debtScore';
 type SortDir = 'asc' | 'desc';
@@ -28,11 +29,20 @@ export function TechDebtDashboard() {
   const files = useGraphStore((s) => s.files);
   const techDebt = useGraphStore((s) => s.techDebt);
   const searchQuery = useGraphStore((s) => s.searchQuery);
+  const language = useGraphStore((s) => s.language);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const setView = useGraphStore((s) => s.setView);
 
   const [sortKey, setSortKey] = useState<SortKey>('debtScore');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Drilling into one row from another (e.g. clicking circular-partner evidence)
+  // keeps the user in the table — select the file and expand its findings.
+  const drillTo = (id: string) => {
+    if (!techDebt.has(id)) { setSelectedNode(id); setView('files'); return; }
+    setExpandedId(id);
+  };
 
   const rows: Row[] = useMemo(() => {
     const result: Row[] = [];
@@ -111,6 +121,7 @@ export function TechDebtDashboard() {
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 bg-slate-900 border-b border-slate-800 z-10">
             <tr>
+              <th className="w-6" />
               <Th label="File" k="name" />
               <Th label="Type" k="type" />
               <Th label="LOC" k="linesOfCode" />
@@ -125,12 +136,18 @@ export function TechDebtDashboard() {
           <tbody>
             {sorted.map(({ file, metrics }) => {
               const cfg = FILE_TYPE_CONFIG[file.type];
+              const isExpanded = expandedId === file.id;
               return (
+                <Fragment key={file.id}>
                 <tr
-                  key={file.id}
-                  onClick={() => { setSelectedNode(file.id); setView('files'); }}
-                  className="border-b border-slate-900 hover:bg-slate-900 cursor-pointer transition-colors"
+                  onClick={() => setExpandedId(isExpanded ? null : file.id)}
+                  className={`border-b border-slate-900 hover:bg-slate-900 cursor-pointer transition-colors ${isExpanded ? 'bg-slate-900' : ''}`}
                 >
+                  {/* Expander */}
+                  <td className="pl-2 text-slate-500">
+                    {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  </td>
+
                   {/* File */}
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -214,6 +231,30 @@ export function TechDebtDashboard() {
                     </div>
                   </td>
                 </tr>
+
+                {/* Drill-down: why this file is in debt + how to fix */}
+                {isExpanded && (
+                  <tr className="bg-slate-950">
+                    <td />
+                    <td colSpan={9} className="px-4 py-3">
+                      <div className="max-w-3xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                            Issues & how to fix — {file.name}
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedNode(file.id); setView('files'); }}
+                            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                          >
+                            View in graph <ArrowUpRight size={11} />
+                          </button>
+                        </div>
+                        <DebtFindings file={file} metrics={metrics} files={files} language={language} onSelect={drillTo} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

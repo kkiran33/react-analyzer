@@ -9,6 +9,8 @@ import { FILE_TYPE_CONFIG, typeLabel, type ParsedFile, type FunctionDef } from '
 import { computeImpact } from '@/lib/impactAnalyzer';
 import { generateSpecDoc, generateBRD, generateSITCases, generateUATCases, downloadMarkdown } from '@/lib/docGenerator';
 import { generateFileDiagram, downloadPlantUml } from '@/lib/plantUmlGenerator';
+import { DebtFindings } from './DebtFindings';
+import type { Language } from '@/types/graph';
 
 type TabId = 'overview' | 'logic' | 'impact' | 'spec' | 'generate';
 
@@ -120,7 +122,7 @@ export function ModuleDeepDive() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'overview' && <OverviewTab file={file} files={files} metrics={metrics} />}
+        {activeTab === 'overview' && <OverviewTab file={file} files={files} metrics={metrics} language={language} />}
         {activeTab === 'logic'    && <LogicTab file={file} />}
         {activeTab === 'impact'   && <ImpactTab file={file} files={files} />}
         {activeTab === 'spec'     && <SpecTab file={file} files={files} metrics={metrics} />}
@@ -132,7 +134,7 @@ export function ModuleDeepDive() {
 
 // ─── Overview tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ file, files, metrics }: { file: ParsedFile; files: Map<string, ParsedFile>; metrics?: import('@/types/graph').TechDebtMetrics }) {
+function OverviewTab({ file, files, metrics, language }: { file: ParsedFile; files: Map<string, ParsedFile>; metrics?: import('@/types/graph').TechDebtMetrics; language: Language }) {
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const importedBy = [...files.values()].filter((f: ParsedFile) => f.resolvedImports.includes(file.id));
   const internalImports = file.imports.filter(i => i.isRelative);
@@ -173,15 +175,9 @@ function OverviewTab({ file, files, metrics }: { file: ParsedFile; files: Map<st
               style={{ width: `${metrics.debtScore}%`, background: debtColor(metrics.debtScore) }}
             />
           </div>
-          {metrics.flags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {metrics.flags.map(f => (
-                <span key={f} className="text-xs px-1.5 py-0.5 bg-slate-900 border border-slate-700 rounded text-amber-400">
-                  {f}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="mt-3">
+            <DebtFindings file={file} metrics={metrics} files={files} language={language} onSelect={setSelectedNode} />
+          </div>
         </div>
       )}
 
@@ -517,8 +513,9 @@ function ImpactTab({ file, files }: { file: ParsedFile; files: Map<string, Parse
 // ─── Spec tab ─────────────────────────────────────────────────────────────────
 
 function SpecTab({ file, files, metrics }: { file: ParsedFile; files: Map<string, ParsedFile>; metrics?: import('@/types/graph').TechDebtMetrics }) {
+  const language = useGraphStore((s) => s.language);
   const [copied, setCopied] = useState(false);
-  const spec = useMemo(() => generateSpecDoc({ file, files, metrics }), [file, files, metrics]);
+  const spec = useMemo(() => generateSpecDoc({ file, files, metrics, language }), [file, files, metrics, language]);
 
   const copy = () => {
     navigator.clipboard.writeText(spec).then(() => {
@@ -546,8 +543,9 @@ function SpecTab({ file, files, metrics }: { file: ParsedFile; files: Map<string
 // ─── Generate tab ─────────────────────────────────────────────────────────────
 
 function GenerateTab({ file, files, metrics }: { file: ParsedFile; files: Map<string, ParsedFile>; metrics?: import('@/types/graph').TechDebtMetrics }) {
+  const language = useGraphStore((s) => s.language);
   const impact = useMemo(() => computeImpact(file.id, files), [file.id, files]);
-  const ctx = { file, files, metrics, impact };
+  const ctx = { file, files, metrics, impact, language };
 
   const DOCS = [
     {

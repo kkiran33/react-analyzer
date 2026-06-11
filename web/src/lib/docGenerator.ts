@@ -1,12 +1,14 @@
-import type { ParsedFile, TechDebtMetrics, ImpactChain } from '@/types/graph';
+import type { ParsedFile, TechDebtMetrics, ImpactChain, Language } from '@/types/graph';
 import { FILE_TYPE_CONFIG } from '@/types/graph';
 import { computeImpact } from './impactAnalyzer';
+import { adviseDebt } from './debtAdvisor';
 
 export interface DocContext {
   file: ParsedFile;
   files: Map<string, ParsedFile>;
   metrics?: TechDebtMetrics;
   impact?: ImpactChain;
+  language?: Language;
 }
 
 function getImpact(ctx: DocContext): ImpactChain {
@@ -118,6 +120,33 @@ export function generateSpecDoc(ctx: DocContext): string {
     `- **Affected routes:** ${impact.affectedRoutes.length > 0 ? impact.affectedRoutes.join(', ') : 'none'}`,
     `- **Covered by test:** ${metrics ? (metrics.hasTest ? 'Yes' : 'No — ⚠️ no test file detected') : 'Unknown'}`,
   ];
+
+  // Technical debt — issues with concrete recommendations
+  if (metrics) {
+    const findings = adviseDebt(file, metrics, files, ctx.language ?? 'react');
+    lines.push('', '## Technical Debt', '', `**Debt score:** ${metrics.debtScore}/100 (${debtBand(metrics.debtScore)})`, '');
+    if (findings.length === 0) {
+      lines.push('_No debt issues detected — this module looks healthy._');
+    } else {
+      for (const f of findings) {
+        lines.push(
+          `### [${f.severity.toUpperCase()}] ${f.title}`,
+          '',
+          `**Why it matters:** ${f.why}`,
+          '',
+          `**Recommended fix:** ${f.fix}`,
+          '',
+        );
+        if (f.evidenceIds?.length) {
+          const names = f.evidenceIds.map(id => files.get(id)?.name).filter(Boolean);
+          if (names.length) lines.push(`_Related files: ${names.map(n => `\`${n}\``).join(', ')}_`, '');
+        }
+        if (f.evidenceText?.length) {
+          lines.push(`_Symbols: ${f.evidenceText.map(t => `\`${t}\``).join(', ')}_`, '');
+        }
+      }
+    }
+  }
 
   return lines.filter(l => l !== undefined).join('\n');
 }

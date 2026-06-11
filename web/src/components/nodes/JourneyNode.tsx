@@ -6,10 +6,10 @@ export type JourneyNodeType = Node<{ route: JourneyRoute }, 'journeyNode'>;
 
 function JourneyNodeInner({ data, selected }: NodeProps<JourneyNodeType>) {
   const { route } = data;
-  const depth = route.depth;
+  const level = route.level;
 
-  const depthColor = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899'][depth % 5];
-  const depthBg = ['#1E3A5F', '#2E1065', '#064E3B', '#451A03', '#500724'][depth % 5];
+  const depthColor = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899'][level % 5];
+  const depthBg = ['#1E3A5F', '#2E1065', '#064E3B', '#451A03', '#500724'][level % 5];
 
   return (
     <div
@@ -46,6 +46,17 @@ function JourneyNodeInner({ data, selected }: NodeProps<JourneyNodeType>) {
             letterSpacing: '0.06em',
           }}>PROTECTED</span>
         )}
+        {route.isEntry && (
+          <span style={{
+            background: '#0d9488',
+            color: '#fff',
+            fontSize: 9,
+            fontWeight: 700,
+            padding: '1px 5px',
+            borderRadius: 3,
+            letterSpacing: '0.06em',
+          }}>ENTRY</span>
+        )}
         <span style={{
           background: depthColor,
           color: '#000',
@@ -54,8 +65,8 @@ function JourneyNodeInner({ data, selected }: NodeProps<JourneyNodeType>) {
           padding: '1px 5px',
           borderRadius: 3,
           letterSpacing: '0.06em',
-        }}>
-          L{depth}
+        }} title="Navigation depth — steps from an entry screen">
+          L{level}
         </span>
       </div>
 

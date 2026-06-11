@@ -33,6 +33,7 @@ function Canvas() {
   const rawEdges = useGraphStore((s) => s.edges);
   const files = useGraphStore((s) => s.files);
   const view = useGraphStore((s) => s.view);
+  const language = useGraphStore((s) => s.language);
   const enabledTypes = useGraphStore((s) => s.enabledTypes);
   const searchQuery = useGraphStore((s) => s.searchQuery);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
@@ -49,7 +50,7 @@ function Canvas() {
   // Compute the graph for the active view
   const { activeNodes, activeEdges } = useMemo(() => {
     if (view === 'journey') {
-      const g = buildJourneyGraph(files);
+      const g = buildJourneyGraph(files, language);
       return { activeNodes: g.nodes, activeEdges: g.edges };
     }
     if (view === 'functions') {
@@ -79,7 +80,7 @@ function Canvas() {
       hidden: hiddenIds.has(e.source) || hiddenIds.has(e.target),
     }));
     return { activeNodes: filteredNodes, activeEdges: filteredEdges };
-  }, [view, files, rawNodes, rawEdges, enabledTypes, searchQuery]);
+  }, [view, files, language, rawNodes, rawEdges, enabledTypes, searchQuery, impactChain]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(activeNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(activeEdges);

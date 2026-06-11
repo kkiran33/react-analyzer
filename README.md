@@ -24,13 +24,13 @@ Swift and Kotlin `import` statements are *module-level*, so — unlike React —
 | View | What it shows |
 |------|---------------|
 | **Files** | Import dependency graph — every file as a node, import edges between them |
-| **Journey** | Page navigation flow — routes, `<Link>` connections, `navigate()` calls |
+| **Journey** | Screen navigation flow — entry screens, `L0→L1→L2…` levels (BFS depth through the flow), `<Link>`/`navigate()` connections. For Swift/Kotlin it also infers screen→screen edges from the symbol-reference graph, so flows aren't flat even when explicit nav calls aren't matched |
 | **Functions** | Per-file export map — components (C), hooks (H), async (A), utilities (F) |
-| **Tech Debt** | Sortable metrics table — LOC, fan-in, fan-out, circular deps, test coverage, debt score |
+| **Tech Debt** | Sortable metrics table — LOC, fan-in, fan-out, circular deps, test coverage, debt score. **Click any row to drill down** into a per-issue explanation: a score breakdown, *why* each problem matters, and a concrete *how-to-fix*, with clickable links to the files involved (e.g. circular-dependency partners) |
 
 ### Module Deep-Dive (right panel)
 Click any node to open a 5-tab panel:
-- **Overview** — stats, debt score meter, imports, used-by, exports
+- **Overview** — stats, debt score meter with an **Issues & how-to-fix** breakdown (why each flag fired + a concrete recommendation), imports, used-by, exports
 - **Logic** — all functions with kind badges; hooks categorised by purpose (state, side-effect, data-fetch, navigation, form…)
 - **Impact** — change impact analysis: direct dependents (orange glow), transitive cascade (yellow glow), severity rating
 - **Spec** — auto-generated markdown specification document (copy to clipboard)

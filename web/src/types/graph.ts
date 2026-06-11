@@ -93,6 +93,7 @@ export interface TechDebtMetrics {
   circularWith: string[];
   hasTest: boolean;
   unusedExports: string[];
+  complexity: number;   // imports + exports + functions
   debtScore: number;
   flags: DebtFlag[];
 }
