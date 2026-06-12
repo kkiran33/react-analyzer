@@ -14,9 +14,17 @@
  *     --max-critical <n>            fail if more than n critical-risk files
  *     --max-risk <n>                fail if any file's risk exceeds n
  *     --fail-on-regression          fail if any regression vs base/baseline
+ *     --review                      PR triage: focus on changed files, emit a
+ *                                   fast-track vs needs-review verdict (with --base)
+ *     --test-cmd "<cmd>"            run the project's real test suite; a failure
+ *                                   hard-blocks (the behavioral layer)
  *     --json                        machine-readable output
  *
- *   Exit: 0 ok · 1 threshold violation · 2 regression · 3 usage/error
+ *   Exit: 0 ok · 1 threshold/test failure · 2 regression · 3 usage/error
+ *
+ *   NOTE: --review is triage, not approval. It routes PRs and accelerates human
+ *   review; it does not check correctness, security, or design and must not be
+ *   used to auto-merge non-trivial changes without a human.
  */
 import { readFileSync, readdirSync, writeFileSync, statSync, mkdtempSync, rmSync } from 'fs';
 import { join, relative, extname, resolve } from 'path';
@@ -38,10 +46,11 @@ interface Opts {
   dir: string; lang?: Language; top: number;
   base?: string; baseline?: string; saveBaseline?: string;
   maxCritical?: number; maxRisk?: number; failOnRegression: boolean; json: boolean;
+  review: boolean; testCmd?: string;
 }
 
 function parseArgs(argv: string[]): Opts {
-  const o: Opts = { dir: '', top: 10, failOnRegression: false, json: false };
+  const o: Opts = { dir: '', top: 10, failOnRegression: false, json: false, review: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -54,11 +63,34 @@ function parseArgs(argv: string[]): Opts {
       case '--max-critical': o.maxCritical = parseInt(next(), 10); break;
       case '--max-risk': o.maxRisk = parseInt(next(), 10); break;
       case '--fail-on-regression': o.failOnRegression = true; break;
+      case '--review': o.review = true; break;
+      case '--test-cmd': o.testCmd = next(); break;
       case '--json': o.json = true; break;
       default: if (!a.startsWith('--') && !o.dir) o.dir = a;
     }
   }
   return o;
+}
+
+/** Files the PR changed (added/copied/modified/renamed), as keys relative to `dir`. */
+function changedFiles(base: string, dir: string): Set<string> | null {
+  let gitRoot: string;
+  try {
+    gitRoot = execSync('git rev-parse --show-toplevel', { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch { return null; }
+  let out: string;
+  try {
+    out = execSync(`git diff --name-only --diff-filter=ACMR "${base}"...HEAD`, { cwd: gitRoot, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+  } catch { return null; }
+  const relDir = relative(gitRoot, resolve(dir));
+  const prefix = relDir ? relDir + '/' : '';
+  const set = new Set<string>();
+  for (const line of out.split('\n')) {
+    const p = line.trim();
+    if (!p || (prefix && !p.startsWith(prefix))) continue;
+    set.add(prefix ? p.slice(prefix.length) : p);
+  }
+  return set;
 }
 
 function detectLang(dir: string): Language {
@@ -153,6 +185,19 @@ function main() {
   const tiers = { critical: 0, high: 0, medium: 0, low: 0 };
   for (const r of risks.values()) tiers[r.tier]++;
 
+  // Optionally run the project's REAL test suite (the behavioral layer this static
+  // tool cannot replace). A failure here blocks everything — no triage can override
+  // red tests.
+  let testsFailed = false;
+  if (o.testCmd) {
+    if (!o.json) console.log(`\n  Running tests: ${o.testCmd}`);
+    try {
+      execSync(o.testCmd, { cwd: o.dir, stdio: o.json ? 'ignore' : 'inherit' });
+    } catch {
+      testsFailed = true;
+    }
+  }
+
   // Resolve the comparison baseline: --base (git ref) takes precedence over --baseline (file).
   let diff = null;
   let baselineLabel = '';
@@ -167,8 +212,41 @@ function main() {
     baselineLabel = o.baseline;
   }
 
-  // Thresholds → exit code
+  // ── Review triage (changed-files focus + merge recommendation) ─────────────
+  // This is TRIAGE, not approval. It routes a PR to fast-track vs human review;
+  // it never certifies correctness, security, or design.
+  type ReviewRow = { id: string; name: string; risk: number; tier: string; fanIn: number; hasTest: boolean; reasons: string[] };
+  let review: { rows: ReviewRow[]; needsReview: ReviewRow[]; verdict: string } | null = null;
+  if (o.review) {
+    const changed = o.base ? changedFiles(o.base, o.dir) : null;
+    const regressedIds = new Set((diff?.regressions ?? []).map(r => r.fileId));
+    const newIds = new Set(diff?.newFiles ?? []);
+    const ids = changed ? [...changed].filter(p => files.has(p)) : [...files.keys()];
+
+    const rows: ReviewRow[] = ids.map(id => {
+      const m = debt.get(id)!;
+      const r = risks.get(id)!;
+      const reasons: string[] = [];
+      if (r.tier === 'critical' || r.tier === 'high') reasons.push(`${r.tier} regression risk (${r.riskScore})`);
+      if (!m.hasTest && m.fanIn > 0) reasons.push(`untested, ${m.fanIn} file(s) depend on it`);
+      if (m.fanIn > 5) reasons.push(`wide blast radius (${m.fanIn} dependents)`);
+      if (m.circularWith.length > 0) reasons.push('in a dependency cycle');
+      if (regressedIds.has(id)) reasons.push('regresses vs base');
+      if (newIds.has(id) && !m.hasTest && files.get(id)!.exports.length > 0) reasons.push('new untested module');
+      return { id, name: files.get(id)!.name, risk: r.riskScore, tier: r.tier, fanIn: m.fanIn, hasTest: m.hasTest, reasons };
+    });
+
+    const needsReview = rows.filter(r => r.reasons.length > 0);
+    const verdict = testsFailed ? 'BLOCKED'
+      : changed && changed.size > 0 && rows.length === 0 ? 'FAST-TRACK'  // only non-source files changed
+      : needsReview.length === 0 ? 'FAST-TRACK'
+      : 'NEEDS-HUMAN-REVIEW';
+    review = { rows, needsReview, verdict };
+  }
+
+  // Thresholds → exit code. Failing tests are a hard block.
   const violations: string[] = [];
+  if (testsFailed) violations.push('test suite failed');
   if (o.maxCritical !== undefined && tiers.critical > o.maxCritical)
     violations.push(`${tiers.critical} critical-risk files (max ${o.maxCritical})`);
   if (o.maxRisk !== undefined) {
@@ -179,9 +257,14 @@ function main() {
 
   if (o.json) {
     console.log(JSON.stringify({
-      lang, files: files.size, tiers,
+      lang, files: files.size, tiers, testsFailed: o.testCmd ? testsFailed : undefined,
       top: ranked.slice(0, o.top).map(r => ({ file: files.get(r.fileId)?.name, risk: r.riskScore, tier: r.tier, reason: r.reason })),
       diff: diff && { regressions: diff.regressions.length, improvements: diff.improvements, newFiles: diff.newFiles.length },
+      review: review && {
+        verdict: review.verdict,
+        changedFiles: review.rows.length,
+        needsReview: review.needsReview.map(r => ({ file: r.name, risk: r.risk, reasons: r.reasons })),
+      },
       violations, exit: violations.length ? 1 : regressed ? 2 : 0,
     }, null, 2));
   } else {
@@ -203,6 +286,30 @@ function main() {
       }
       if (diff.regressions.length === 0) console.log(`    ✓ no structural regressions introduced`);
     }
+
+    // Review triage block
+    if (review) {
+      console.log(`\n  PR review triage — ${review.rows.length} source file(s) changed`);
+      if (review.needsReview.length === 0) {
+        console.log(`    no structural review flags on the changed files`);
+      } else {
+        for (const r of review.needsReview) {
+          console.log(`    ⚑ ${r.name}: ${r.reasons.join('; ')}`);
+        }
+      }
+      console.log(`\n  VERDICT: ${review.verdict}`);
+      if (review.verdict === 'FAST-TRACK') {
+        console.log(`    Mechanically low-risk. Still requires green tests + type-check;`);
+        console.log(`    not a correctness/security guarantee — see notes below.`);
+      } else if (review.verdict === 'NEEDS-HUMAN-REVIEW') {
+        console.log(`    A reviewer should focus on the ⚑ files above and what they impact.`);
+      } else {
+        console.log(`    Tests failed — cannot proceed until they pass.`);
+      }
+      console.log(`\n  This triage covers structure only. It does NOT check correctness,`);
+      console.log(`  security, business logic, or design — keep a human in the loop for those.`);
+    }
+
     if (violations.length) {
       console.log(`\n  ✗ FAILED: ${violations.join('; ')}`);
     } else if (regressed) {

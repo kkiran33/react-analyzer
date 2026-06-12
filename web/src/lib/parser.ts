@@ -188,9 +188,11 @@ function resolveImport(
   if (!importPath.startsWith('.') && !importPath.startsWith('/')) return null;
 
   const fromDir = fromPath.split('/').slice(0, -1).join('/');
+  // Guard empty fromDir: a root-level file importing './sibling' must normalize to
+  // 'sibling', not '/sibling' — otherwise top-level sibling imports never resolve.
   const base = importPath.startsWith('/')
     ? importPath.slice(1)
-    : normalizePath(`${fromDir}/${importPath}`);
+    : normalizePath(fromDir ? `${fromDir}/${importPath}` : importPath);
 
   if (allFiles.has(base)) return base;
   for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {

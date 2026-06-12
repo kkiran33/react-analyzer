@@ -108,6 +108,8 @@ npm run analyze -- ./src --base origin/main --fail-on-regression --max-risk 85
 | `--lang react\|swift\|kotlin` | Force language (auto-detected if omitted) |
 | `--top <n>` | Show top N risky files (default 10) |
 | `--base <git-ref>` | **PR gate** — compare against a base branch via git worktree |
+| `--review` | **PR triage** — focus on changed files, emit a fast-track vs needs-review verdict |
+| `--test-cmd "<cmd>"` | Run the project's real test suite; a failure hard-blocks |
 | `--max-critical <n>` | Fail if more than n critical-risk files |
 | `--max-risk <n>` | Fail if any file's risk exceeds n |
 | `--baseline <file>` / `--save-baseline <file>` | Compare to / write a baseline snapshot file |
@@ -132,6 +134,21 @@ A ready-to-use GitHub Actions workflow combining these layers is in [`.github/wo
 ```yaml
 - run: npm run analyze -- ./src --base "origin/${{ github.base_ref }}" --fail-on-regression --max-risk 85
 ```
+
+### Triage to speed up review — not replace it
+
+`--review` focuses on the files the PR actually changed and emits a verdict you can use to *route* PRs, so reviewers spend their time where it matters:
+
+```bash
+# Run the real tests AND triage structure in one gate
+npm run analyze -- ./src --base origin/main --review --test-cmd "npm test"
+```
+
+- **`FAST-TRACK`** — the changed files are mechanically low-risk (tested or leaf, small blast radius, no new cycle/regression). Good candidate to merge quickly *once tests and type-check are green*.
+- **`NEEDS-HUMAN-REVIEW`** — lists exactly which changed files need eyes and why (`untested, 3 files depend on it`, `in a dependency cycle`, `wide blast radius`), so the human review is targeted, not open-ended.
+- **`BLOCKED`** — the test suite failed; nothing proceeds.
+
+> **This is triage, not approval.** A `FAST-TRACK` verdict means *low structural risk* — it does **not** verify correctness, security, business logic, or design. Use it to auto-label or fast-queue PRs and to direct attention; do not use it to auto-merge non-trivial changes without a human. Auto-merging is only defensible for genuinely mechanical changes (dependency bumps, generated code, formatting) with green tests — and even then a human owns the policy.
 | `--json` | Machine-readable output |
 
 Exit codes: `0` ok · `1` threshold violation · `2` regression · `3` usage error.
