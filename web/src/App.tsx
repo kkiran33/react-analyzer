@@ -4,6 +4,7 @@ import { Toolbar } from '@/components/Toolbar';
 import { Sidebar } from '@/components/Sidebar';
 import { FlowCanvas } from '@/components/FlowCanvas';
 import { TechDebtDashboard } from '@/components/TechDebtDashboard';
+import { ActionPlan } from '@/components/ActionPlan';
 import { ModuleDeepDive } from '@/components/ModuleDeepDive';
 import { EmptyState } from '@/components/EmptyState';
 
@@ -28,6 +29,8 @@ export default function App() {
             <LoadingOverlay />
           ) : view === 'techdebt' ? (
             <TechDebtDashboard />
+          ) : view === 'actions' ? (
+            <ActionPlan />
           ) : (
             <FlowCanvas />
           )}

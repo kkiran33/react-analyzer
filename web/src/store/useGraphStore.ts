@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Node, Edge } from '@xyflow/react';
 import type {
   AnalysisStatus, FileType, Language, ParsedFile, ViewMode,
-  TechDebtMetrics, TypeOverride,
+  TechDebtMetrics, TypeOverride, FileRisk, Snapshot,
 } from '@/types/graph';
 
 interface GraphStore {
@@ -16,6 +16,8 @@ interface GraphStore {
   nodes: Node[];
   edges: Edge[];
   techDebt: Map<string, TechDebtMetrics>;
+  risks: Map<string, FileRisk>;
+  baseline: Snapshot | null;
   typeOverrides: TypeOverride;
 
   view: ViewMode;
@@ -29,6 +31,8 @@ interface GraphStore {
   setFileCount: (n: number) => void;
   setGraph: (files: Map<string, ParsedFile>, nodes: Node[], edges: Edge[], rootName: string) => void;
   setTechDebt: (m: Map<string, TechDebtMetrics>) => void;
+  setRisks: (m: Map<string, FileRisk>) => void;
+  setBaseline: (s: Snapshot | null) => void;
   setTypeOverride: (pattern: string, type: FileType) => void;
   removeTypeOverride: (pattern: string) => void;
   setError: (msg: string) => void;
@@ -52,6 +56,8 @@ export const useGraphStore = create<GraphStore>((set) => ({
   nodes: [],
   edges: [],
   techDebt: new Map(),
+  risks: new Map(),
+  baseline: null,
   typeOverrides: {},
   view: 'files',
   selectedNodeId: null,
@@ -67,6 +73,8 @@ export const useGraphStore = create<GraphStore>((set) => ({
     set({ files, nodes, edges, rootName, status: 'done', error: null }),
 
   setTechDebt: (techDebt) => set({ techDebt }),
+  setRisks: (risks) => set({ risks }),
+  setBaseline: (baseline) => set({ baseline }),
 
   setTypeOverride: (pattern, type) =>
     set((s) => ({ typeOverrides: { ...s.typeOverrides, [pattern]: type } })),
@@ -102,6 +110,8 @@ export const useGraphStore = create<GraphStore>((set) => ({
       nodes: [],
       edges: [],
       techDebt: new Map(),
+      risks: new Map(),
+      baseline: s.baseline, // keep an imported baseline across re-analysis
       view: 'files',
       selectedNodeId: null,
       enabledTypes: new Set(ALL_TYPES),

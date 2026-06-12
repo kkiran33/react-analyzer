@@ -1,4 +1,5 @@
-import { Search, Eye, EyeOff, Download } from 'lucide-react';
+import { Search, Eye, EyeOff, Download, Upload } from 'lucide-react';
+import { buildSnapshot, diffSnapshot, downloadSnapshot, parseSnapshot } from '@/lib/snapshot';
 import { useGraphStore } from '@/store/useGraphStore';
 import { FILE_TYPE_CONFIG, typeLabel, type FileType } from '@/types/graph';
 import {
@@ -47,6 +48,7 @@ export function Sidebar() {
   if (view === 'journey') return <JourneySidebar files={files} />;
   if (view === 'functions') return <FunctionsSidebar files={files} />;
   if (view === 'techdebt') return <TechDebtSidebar />;
+  if (view === 'actions') return <ActionPlanSidebar />;
 
   // Files view
   const counts: Partial<Record<FileType, number>> = {};
@@ -203,6 +205,119 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
     <div className="flex items-center justify-between">
       <span className="text-xs text-slate-400">{label}</span>
       <span style={{ color }} className="text-sm font-bold tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function ActionPlanSidebar() {
+  const searchQuery = useGraphStore((s) => s.searchQuery);
+  const setSearch = useGraphStore((s) => s.setSearch);
+
+  return (
+    <div className="w-52 flex-shrink-0 border-r border-slate-800 flex flex-col bg-slate-950 overflow-y-auto">
+      <div className="p-3 border-b border-slate-800">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search files…"
+            className="w-full pl-7 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+
+      <div className="p-3 border-b border-slate-800">
+        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">How risk is scored</p>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Risk = blast-radius × coverage-gap. A file ranks high when many others
+          depend on it <span className="text-slate-300">and</span> it has no tests —
+          that's where changes cause regressions. A messy file nothing imports stays low.
+        </p>
+      </div>
+
+      <BaselineGuard />
+    </div>
+  );
+}
+
+function BaselineGuard() {
+  const files = useGraphStore((s) => s.files);
+  const techDebt = useGraphStore((s) => s.techDebt);
+  const risks = useGraphStore((s) => s.risks);
+  const rootName = useGraphStore((s) => s.rootName);
+  const language = useGraphStore((s) => s.language);
+  const baseline = useGraphStore((s) => s.baseline);
+  const setBaseline = useGraphStore((s) => s.setBaseline);
+
+  const diff = baseline ? diffSnapshot(baseline, techDebt, risks) : null;
+
+  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const snap = parseSnapshot(await f.text());
+    if (snap) setBaseline(snap);
+    else alert('Not a valid baseline snapshot.');
+    e.target.value = '';
+  };
+
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Regression guard</p>
+
+      <button
+        onClick={() => downloadSnapshot(buildSnapshot(rootName, language, files, techDebt, risks))}
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-md text-slate-300 transition-colors"
+      >
+        <Download size={11} /> Save baseline
+      </button>
+
+      <label className="w-full flex items-center gap-2 px-2.5 py-2 text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-md text-slate-300 transition-colors cursor-pointer">
+        <Upload size={11} /> {baseline ? 'Replace baseline' : 'Compare to baseline'}
+        <input type="file" accept="application/json,.json" onChange={onImport} className="hidden" />
+      </label>
+
+      {diff && (
+        <div className="mt-2 space-y-1.5">
+          <div className="text-xs text-slate-600">
+            vs {new Date(diff.baselineDate).toLocaleDateString()}
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-red-400">⚠ Regressed</span>
+            <span className="font-bold text-red-400 tabular-nums">{diff.regressions.length}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-emerald-400">Improved</span>
+            <span className="font-bold text-emerald-400 tabular-nums">{diff.improvements}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">New files</span>
+            <span className="text-slate-400 tabular-nums">{diff.newFiles.length}</span>
+          </div>
+
+          {diff.regressions.slice(0, 6).map(r => {
+            const f = files.get(r.fileId);
+            return (
+              <div key={r.fileId} className="text-xs border-l-2 border-red-900 pl-2 py-0.5">
+                <div className="font-mono text-slate-300 truncate">{f?.name ?? r.fileId}</div>
+                <div className="text-slate-600">
+                  {r.lostTest && <span className="text-amber-500">lost test · </span>}
+                  {r.gainedCircular && <span className="text-red-400">new cycle · </span>}
+                  {r.newFlags.length > 0 && <span>+{r.newFlags.join(',')} · </span>}
+                  risk {r.riskBefore}→{r.riskAfter}
+                </div>
+              </div>
+            );
+          })}
+          {diff.regressions.length > 6 && (
+            <div className="text-xs text-slate-600">+{diff.regressions.length - 6} more regressed</div>
+          )}
+          {diff.regressions.length === 0 && (
+            <div className="text-xs text-emerald-500">No regressions vs baseline ✓</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { FolderOpen, RefreshCw, GitBranch, Network, Map, FunctionSquare, BarChart2 } from 'lucide-react';
+import { FolderOpen, RefreshCw, GitBranch, Network, Map, FunctionSquare, BarChart2, ListChecks } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
 import type { ViewMode } from '@/types/graph';
 
@@ -11,6 +11,7 @@ const VIEWS: { id: ViewMode; label: string; icon: React.ReactNode; title: string
   { id: 'journey',   label: 'Journey',   icon: <Map size={13} />,            title: 'Page navigation flow' },
   { id: 'functions', label: 'Functions', icon: <FunctionSquare size={13} />, title: 'Function-level module map' },
   { id: 'techdebt',  label: 'Tech Debt', icon: <BarChart2 size={13} />,      title: 'Technical debt metrics' },
+  { id: 'actions',   label: 'Action Plan', icon: <ListChecks size={13} />,   title: 'Prioritized fixes by regression risk' },
 ];
 
 export function Toolbar({ onOpen }: Props) {

@@ -74,7 +74,7 @@ export const LANGUAGE_CONFIG: Record<
 
 export type AnalysisStatus = 'idle' | 'reading' | 'parsing' | 'building' | 'done' | 'error';
 
-export type ViewMode = 'files' | 'journey' | 'functions' | 'techdebt';
+export type ViewMode = 'files' | 'journey' | 'functions' | 'techdebt' | 'actions';
 
 export type DebtFlag =
   | 'god-file'
@@ -104,6 +104,65 @@ export interface ImpactChain {
   affectedRoutes: string[];
   affectedTests: string[];
   totalImpact: number;
+}
+
+// ─── Remediation / risk (actionable layer) ────────────────────────────────────
+
+export type ActionEffort = 'quick' | 'medium' | 'large';
+export type RiskTier = 'critical' | 'high' | 'medium' | 'low';
+
+export interface RemediationAction {
+  kind: DebtFlag | 'regression-risk';
+  title: string;   // short imperative — "Add tests before changing this"
+  detail: string;  // specific, with counts and names
+  effort: ActionEffort;
+  weight: number;  // contribution to risk (for ordering actions within a file)
+}
+
+export interface FileRisk {
+  fileId: string;
+  riskScore: number;       // 0..100 — regression danger, not just internal debt
+  tier: RiskTier;
+  blastRadius: number;     // weighted dependents (direct + 0.5·transitive)
+  reason: string;          // one-line why-it-ranks
+  actions: RemediationAction[]; // ordered, highest-weight first
+}
+
+// Compact per-file record persisted in a baseline snapshot for regression diffing.
+export interface SnapshotEntry {
+  debtScore: number;
+  riskScore: number;
+  fanIn: number;
+  hasTest: boolean;
+  circular: number;
+  flags: DebtFlag[];
+}
+
+export interface Snapshot {
+  version: 1;
+  createdAt: string;       // ISO date
+  rootName: string;
+  language: Language;
+  fileCount: number;
+  files: Record<string, SnapshotEntry>; // keyed by file path/id
+}
+
+export interface RegressionItem {
+  fileId: string;
+  riskBefore: number;
+  riskAfter: number;
+  newFlags: DebtFlag[];
+  lostTest: boolean;        // had a test in baseline, not now
+  gainedCircular: boolean;  // newly in a cycle
+}
+
+export interface RegressionDiff {
+  baselineDate: string;
+  newFiles: string[];           // added since baseline
+  removedFiles: string[];       // deleted since baseline
+  regressions: RegressionItem[];// got worse (risk up, lost test, new cycle, new flag)
+  improvements: number;         // files that got better
+  unchanged: number;
 }
 
 export type TypeOverride = Record<string, FileType>;

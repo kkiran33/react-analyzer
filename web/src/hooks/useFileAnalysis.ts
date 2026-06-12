@@ -3,6 +3,7 @@ import { readFolder } from '@/lib/fsReader';
 import { parseFiles } from '@/lib/parser';
 import { buildGraph } from '@/lib/graphBuilder';
 import { analyzeDebt } from '@/lib/techDebtAnalyzer';
+import { assessAll } from '@/lib/remediation';
 import { useGraphStore } from '@/store/useGraphStore';
 import type { Language } from '@/types/graph';
 
@@ -12,6 +13,7 @@ export function useFileAnalysis() {
   const setFileCount = useGraphStore((s) => s.setFileCount);
   const setGraph = useGraphStore((s) => s.setGraph);
   const setTechDebt = useGraphStore((s) => s.setTechDebt);
+  const setRisks = useGraphStore((s) => s.setRisks);
   const setError = useGraphStore((s) => s.setError);
   const typeOverrides = useGraphStore((s) => s.typeOverrides);
 
@@ -32,6 +34,7 @@ export function useFileAnalysis() {
 
       const debtMetrics = analyzeDebt(parsedFiles);
       setTechDebt(debtMetrics);
+      setRisks(assessAll(parsedFiles, debtMetrics));
     } catch (err) {
       if (err instanceof Error) {
         if (err.name === 'AbortError') setStatus('idle');
@@ -40,7 +43,7 @@ export function useFileAnalysis() {
         setStatus('idle');
       }
     }
-  }, [setStatus, setLanguage, setFileCount, setGraph, setTechDebt, setError, typeOverrides]);
+  }, [setStatus, setLanguage, setFileCount, setGraph, setTechDebt, setRisks, setError, typeOverrides]);
 
   return { analyze };
 }

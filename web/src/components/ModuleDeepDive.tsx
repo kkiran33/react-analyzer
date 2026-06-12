@@ -421,9 +421,12 @@ function FnRow({ fn }: { fn: FunctionDef }) {
 
 // ─── Impact tab ───────────────────────────────────────────────────────────────
 
+const EFFORT_COLOR: Record<string, string> = { quick: '#10B981', medium: '#F59E0B', large: '#EF4444' };
+
 function ImpactTab({ file, files }: { file: ParsedFile; files: Map<string, ParsedFile> }) {
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const language = useGraphStore((s) => s.language);
+  const risk = useGraphStore((s) => s.risks.get(file.id));
   const [showAll, setShowAll] = useState(false);
 
   const impact = useMemo(() => computeImpact(file.id, files), [file.id, files]);
@@ -447,8 +450,37 @@ function ImpactTab({ file, files }: { file: ParsedFile; files: Map<string, Parse
         </div>
         <div className="text-xs text-slate-500 mt-1">
           {impact.direct.length} direct · {impact.transitive.length} transitive
+          {risk && <span> · risk {risk.riskScore}/100</span>}
         </div>
       </div>
+
+      {/* Recommended actions for this file */}
+      {risk && risk.actions.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-xs">🛠️</span>
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Recommended actions</span>
+          </div>
+          <div className="space-y-2">
+            {risk.actions.map((a, i) => (
+              <div key={i} className="bg-slate-900 border border-slate-800 rounded-md p-2.5">
+                <div className="flex items-start gap-2">
+                  <span
+                    style={{ background: (EFFORT_COLOR[a.effort] ?? '#64748B') + '22', color: EFFORT_COLOR[a.effort] ?? '#64748B' }}
+                    className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 capitalize"
+                  >
+                    {a.effort}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-200">{a.title}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">{a.detail}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {impact.direct.length > 0 && (
         <Section icon={<span className="text-orange-400 text-xs">●</span>} title={`Direct (${impact.direct.length})`}>
