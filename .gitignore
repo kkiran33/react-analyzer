@@ -9,3 +9,6 @@ build/
 # TypeScript incremental build cache
 web/tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Built CLI bundle
+web/cli/analyze.mjs

@@ -20,13 +20,22 @@ Swift and Kotlin `import` statements are *module-level*, so — unlike React —
 
 ## Features
 
-### Four views
+### Five views
 | View | What it shows |
 |------|---------------|
 | **Files** | Import dependency graph — every file as a node, import edges between them |
 | **Journey** | Page navigation flow — routes, `<Link>` connections, `navigate()` calls |
 | **Functions** | Per-file export map — components (C), hooks (H), async (A), utilities (F) |
 | **Tech Debt** | Sortable metrics table — LOC, fan-in, fan-out, circular deps, test coverage, debt score |
+| **Action Plan** | Prioritized fixes ranked by **regression risk** = blast-radius × coverage-gap. Each item has a concrete action and an effort estimate. |
+
+### Actionable remediation & regression guard
+Tech-debt scores tell you what's messy; the **Action Plan** tells you what to *do* and in what order. The key idea: a debt score isn't a to-do list — what causes regressions is changing a heavily-depended-on file with no test coverage. So:
+
+- **Risk = blast-radius × coverage-gap.** An untested file 20 others import ranks at the top; a messy util nothing imports stays low (it can't break anything else).
+- **Specific actions with real names/counts** — "Add tests before changing this — 23 files import it; a change can break ConversationList, MessageList, …", "Break circular dependency with X", "Split this 883-line file", "Remove N dead exports" (quick win).
+- **Per-file actions** appear in the Deep-Dive → Impact tab for the selected file.
+- **Regression guard** (Action Plan sidebar): **Save baseline** exports a JSON snapshot of current debt/risk/coverage; **Compare to baseline** re-imports it and flags only what got *worse* — risk increases, lost test coverage, new cycles — so you catch regressions before they land.
 
 ### Module Deep-Dive (right panel)
 Click any node to open a 5-tab panel:
@@ -76,14 +85,44 @@ The tool reads all `.ts`, `.tsx`, `.js`, `.jsx` files (skipping `node_modules`, 
 - All function definitions (components, hooks, async, utilities)
 - Tech debt metrics: lines of code, fan-in, fan-out, circular dependencies, missing tests
 
-## Extra tools (CLI)
+## CLI / CI gate
 
-| Script | Purpose |
+Run the exact same analysis headlessly to gate pull requests. The CLI auto-detects the language (React / Swift / Kotlin) and exits non-zero when thresholds are exceeded.
+
+```bash
+cd web
+
+# Show the prioritized fix list for any project
+npm run analyze -- /path/to/project
+
+# Fail CI if any file's regression risk exceeds 70
+npm run analyze -- /path/to/project --max-risk 70
+
+# Catch regressions: save a baseline, then compare later
+npm run analyze -- /path/to/project --save-baseline baseline.json
+npm run analyze -- /path/to/project --baseline baseline.json --fail-on-regression
+```
+
+| Option | Effect |
+|--------|--------|
+| `--lang react\|swift\|kotlin` | Force language (auto-detected if omitted) |
+| `--top <n>` | Show top N risky files (default 10) |
+| `--max-critical <n>` | Fail if more than n critical-risk files |
+| `--max-risk <n>` | Fail if any file's risk exceeds n |
+| `--baseline <file>` / `--save-baseline <file>` | Compare to / write a baseline snapshot |
+| `--fail-on-regression` | Fail if any file regressed vs the baseline |
+| `--json` | Machine-readable output |
+
+Exit codes: `0` ok · `1` threshold violation · `2` regression · `3` usage error.
+
+## Prompt toolkit (paste into Claude Code)
+
+| File | Purpose |
 |--------|---------|
 | `scan.sh [path]` | No-AI static scan — produces `mfe-map.md` from shell |
 | `analyze-with-local-model.sh [path]` | Feed the scan output to a local Ollama/LM Studio model |
-| `mfe-analyzer-quick.md` | Prompt to paste into Claude Code for a deep AI-assisted analysis |
-| `mfe-analyzer-prompt.md` | Full 10-step detailed analysis prompt |
+| `mfe-analyzer-quick.md` / `mfe-analyzer-prompt.md` | React MFE deep-read prompts |
+| `ios-swift-analyzer-prompt.md` / `android-kotlin-analyzer-prompt.md` | Native deep-read prompts |
 
 ## Tech stack
 

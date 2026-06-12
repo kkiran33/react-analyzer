@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:cli": "esbuild cli/index.ts --bundle --platform=node --format=esm --outfile=cli/analyze.mjs --alias:@=./src",
+    "analyze": "npm run build:cli --silent && node cli/analyze.mjs"
   },
   "dependencies": {
     "@babel/parser": "^7.29.7",
