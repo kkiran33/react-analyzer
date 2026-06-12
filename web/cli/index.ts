@@ -7,22 +7,26 @@
  *   node cli/analyze.mjs <dir> [options]
  *     --lang react|swift|kotlin     (auto-detected if omitted)
  *     --top <n>                     show top N risky files (default 10)
- *     --baseline <file.json>        compare against a saved baseline
+ *     --base <git-ref>              compare against a base branch (PR gate);
+ *                                   analyzes the ref in a temp git worktree
+ *     --baseline <file.json>        compare against a saved baseline file
  *     --save-baseline <file.json>   write a baseline snapshot and exit
  *     --max-critical <n>            fail if more than n critical-risk files
  *     --max-risk <n>                fail if any file's risk exceeds n
- *     --fail-on-regression          fail if any regression vs baseline
+ *     --fail-on-regression          fail if any regression vs base/baseline
  *     --json                        machine-readable output
  *
  *   Exit: 0 ok · 1 threshold violation · 2 regression · 3 usage/error
  */
-import { readFileSync, readdirSync, writeFileSync, statSync } from 'fs';
-import { join, relative, extname } from 'path';
+import { readFileSync, readdirSync, writeFileSync, statSync, mkdtempSync, rmSync } from 'fs';
+import { join, relative, extname, resolve } from 'path';
+import { tmpdir } from 'os';
+import { execSync } from 'child_process';
 import { parseFiles } from '@/lib/parser';
 import { analyzeDebt } from '@/lib/techDebtAnalyzer';
 import { assessAll, rankByRisk } from '@/lib/remediation';
 import { buildSnapshot, diffSnapshot, parseSnapshot } from '@/lib/snapshot';
-import { LANGUAGE_CONFIG, type Language } from '@/types/graph';
+import { LANGUAGE_CONFIG, type Language, type Snapshot } from '@/types/graph';
 
 const SKIP = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', '.nuxt', 'out', '.turbo',
@@ -32,7 +36,7 @@ const SKIP = new Set([
 
 interface Opts {
   dir: string; lang?: Language; top: number;
-  baseline?: string; saveBaseline?: string;
+  base?: string; baseline?: string; saveBaseline?: string;
   maxCritical?: number; maxRisk?: number; failOnRegression: boolean; json: boolean;
 }
 
@@ -43,7 +47,8 @@ function parseArgs(argv: string[]): Opts {
     const next = () => argv[++i];
     switch (a) {
       case '--lang': o.lang = next() as Language; break;
-      case '--top': o.top = parseInt(next(), 10) || 10; break;
+      case '--top': { const n = parseInt(next(), 10); o.top = Number.isNaN(n) ? 10 : n; break; }
+      case '--base': o.base = next(); break;
       case '--baseline': o.baseline = next(); break;
       case '--save-baseline': o.saveBaseline = next(); break;
       case '--max-critical': o.maxCritical = parseInt(next(), 10); break;
@@ -85,6 +90,45 @@ function readDir(dir: string, lang: Language): Map<string, string> {
   return out;
 }
 
+/** Run the full analysis pipeline on a directory. */
+function runPipeline(dir: string, lang: Language) {
+  const raw = readDir(dir, lang);
+  const files = parseFiles(raw, undefined, lang);
+  const debt = analyzeDebt(files);
+  const risks = assessAll(files, debt);
+  return { files, debt, risks };
+}
+
+/**
+ * Build a baseline snapshot from a git ref by materializing it in a throwaway
+ * worktree — leaves the working tree untouched (safe to run on a dirty PR branch).
+ */
+function baselineFromRef(ref: string, dir: string, lang: Language): Snapshot {
+  let gitRoot: string;
+  try {
+    gitRoot = execSync('git rev-parse --show-toplevel', { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    console.error('--base requires a git repository.'); process.exit(3);
+  }
+  // Verify the ref exists
+  try {
+    execSync(`git rev-parse --verify --quiet "${ref}^{commit}"`, { cwd: gitRoot, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    console.error(`Base ref not found: ${ref} (try \`git fetch origin\` first)`); process.exit(3);
+  }
+  const rel = relative(gitRoot, resolve(dir));
+  const wt = mkdtempSync(join(tmpdir(), 'module-analyzer-base-'));
+  try {
+    execSync(`git worktree add --detach --quiet "${wt}" "${ref}"`, { cwd: gitRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+    const baseDir = join(wt, rel);
+    const r = runPipeline(baseDir, lang);
+    return buildSnapshot(`${ref}`, lang, r.files, r.debt, r.risks);
+  } finally {
+    try { execSync(`git worktree remove --force "${wt}"`, { cwd: gitRoot, stdio: 'ignore' }); } catch { /* best effort */ }
+    try { rmSync(wt, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
 function main() {
   const o = parseArgs(process.argv.slice(2));
   if (!o.dir) { console.error('Usage: analyze <dir> [options]'); process.exit(3); }
@@ -92,12 +136,9 @@ function main() {
   catch { console.error(`Not a directory: ${o.dir}`); process.exit(3); }
 
   const lang = o.lang ?? detectLang(o.dir);
-  const raw = readDir(o.dir, lang);
-  if (raw.size === 0) { console.error(`No ${lang} source files found in ${o.dir}`); process.exit(3); }
-
-  const files = parseFiles(raw, undefined, lang);
-  const debt = analyzeDebt(files);
-  const risks = assessAll(files, debt);
+  const head = runPipeline(o.dir, lang);
+  if (head.files.size === 0) { console.error(`No ${lang} source files found in ${o.dir}`); process.exit(3); }
+  const { files, debt, risks } = head;
   const ranked = rankByRisk(risks);
 
   const rootName = o.dir.replace(/\/+$/, '').split('/').pop() || 'project';
@@ -112,11 +153,18 @@ function main() {
   const tiers = { critical: 0, high: 0, medium: 0, low: 0 };
   for (const r of risks.values()) tiers[r.tier]++;
 
+  // Resolve the comparison baseline: --base (git ref) takes precedence over --baseline (file).
   let diff = null;
-  if (o.baseline) {
+  let baselineLabel = '';
+  if (o.base) {
+    const snap = baselineFromRef(o.base, o.dir, lang);
+    diff = diffSnapshot(snap, debt, risks);
+    baselineLabel = o.base;
+  } else if (o.baseline) {
     const snap = parseSnapshot(readFileSync(o.baseline, 'utf8'));
     if (!snap) { console.error(`Invalid baseline: ${o.baseline}`); process.exit(3); }
     diff = diffSnapshot(snap, debt, risks);
+    baselineLabel = o.baseline;
   }
 
   // Thresholds → exit code
@@ -147,12 +195,13 @@ function main() {
       console.log(`          ${r.actions[0].title} — ${r.reason}`);
     }
     if (diff) {
-      console.log(`\n  vs baseline ${diff.baselineDate.slice(0, 10)}: ` +
-        `${diff.regressions.length} regressed, ${diff.improvements} improved, ${diff.newFiles.length} new`);
+      console.log(`\n  This change vs ${baselineLabel || diff.baselineDate.slice(0, 10)}: ` +
+        `${diff.regressions.length} regressed, ${diff.improvements} improved, ${diff.newFiles.length} new file(s)`);
       for (const r of diff.regressions.slice(0, 8)) {
         const tags = [r.lostTest && 'lost-test', r.gainedCircular && 'new-cycle', ...r.newFlags].filter(Boolean).join(', ');
         console.log(`    ⚠ ${files.get(r.fileId)?.name}: risk ${r.riskBefore}→${r.riskAfter}${tags ? ` (${tags})` : ''}`);
       }
+      if (diff.regressions.length === 0) console.log(`    ✓ no structural regressions introduced`);
     }
     if (violations.length) {
       console.log(`\n  ✗ FAILED: ${violations.join('; ')}`);

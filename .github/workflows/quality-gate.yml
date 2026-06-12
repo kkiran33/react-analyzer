@@ -1,0 +1,64 @@
+# Defense-in-depth quality gate for pull requests.
+#
+# IMPORTANT: no single tool guarantees a PR is regression-free. This workflow
+# layers the checks that together give high confidence. Module Analyzer is the
+# STRUCTURAL/ARCHITECTURAL layer — it catches new debt, new cycles, lost test
+# coverage, and risky blast radius. It does NOT run your code, so it cannot
+# replace the type-check and test layers below. Keep all of them.
+#
+# This example gates this repo (analyzes web/src). To protect a different repo,
+# copy this file there and adjust the working-directory / analyze path, and add
+# a step to make the analyzer CLI available (see the commented block).
+
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so --base origin/<target> resolves
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      # ── Layer 1: type/contract breakage ────────────────────────────────────
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      # ── Layer 2: behavioral regressions (run the real tests) ───────────────
+      # The analyzer detects whether a test FILE exists — it cannot tell you the
+      # tests pass. Run them. (No test runner is configured in this repo yet;
+      # uncomment when one is added.)
+      # - name: Tests
+      #   working-directory: web
+      #   run: npm test
+
+      # ── Layer 3: structural debt + regression gate (this tool) ─────────────
+      # Fails the PR if it introduces a regression vs the base branch
+      # (risk up, lost test coverage, a new cycle, a new debt flag) or if any
+      # file's regression risk exceeds the ceiling.
+      - name: Structural + regression gate
+        working-directory: web
+        run: npm run analyze -- ./src --base "origin/${{ github.base_ref }}" --fail-on-regression --max-risk 85
+
+  # ── Protecting a DIFFERENT repository ──────────────────────────────────────
+  # Add a step before the gate that fetches the analyzer, e.g.:
+  #
+  #   - name: Get analyzer
+  #     run: |
+  #       git clone --depth 1 https://github.com/kkiran33/react-analyzer.git .analyzer
+  #       cd .analyzer/web && npm ci && npm run build:cli
+  #   - name: Gate
+  #     run: node .analyzer/web/cli/analyze.mjs ./src --base "origin/${{ github.base_ref }}" --fail-on-regression

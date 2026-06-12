@@ -98,19 +98,40 @@ npm run analyze -- /path/to/project
 # Fail CI if any file's regression risk exceeds 70
 npm run analyze -- /path/to/project --max-risk 70
 
-# Catch regressions: save a baseline, then compare later
-npm run analyze -- /path/to/project --save-baseline baseline.json
-npm run analyze -- /path/to/project --baseline baseline.json --fail-on-regression
+# PR gate: compare a branch against its base — no baseline file needed.
+# Analyzes the base ref in a throwaway git worktree (working tree untouched).
+npm run analyze -- ./src --base origin/main --fail-on-regression --max-risk 85
 ```
 
 | Option | Effect |
 |--------|--------|
 | `--lang react\|swift\|kotlin` | Force language (auto-detected if omitted) |
 | `--top <n>` | Show top N risky files (default 10) |
+| `--base <git-ref>` | **PR gate** — compare against a base branch via git worktree |
 | `--max-critical <n>` | Fail if more than n critical-risk files |
 | `--max-risk <n>` | Fail if any file's risk exceeds n |
-| `--baseline <file>` / `--save-baseline <file>` | Compare to / write a baseline snapshot |
-| `--fail-on-regression` | Fail if any file regressed vs the baseline |
+| `--baseline <file>` / `--save-baseline <file>` | Compare to / write a baseline snapshot file |
+| `--fail-on-regression` | Fail if the change regressed vs base/baseline |
+
+## Using it to protect pull requests
+
+**No tool can guarantee a PR is 100% regression-free — this one included.** It is *static* analysis: it reads structure, it never runs your code, so it cannot catch logic bugs, runtime errors, or whether your tests actually pass. Treating any single check as a 100% guarantee is how broken code ships with a green checkmark.
+
+What it *does* guarantee for a PR: it will **fail the build if the change introduces a structural regression** — a new circular dependency, a file that lost its test coverage, a new untested hub, or a file crossing your risk ceiling. That is the architectural layer. Combine it with the layers it can't replace:
+
+| Layer | Catches | Run |
+|-------|---------|-----|
+| Type check | type / contract breakage | `tsc --noEmit` |
+| **Test suite** (actually run it) | behavioral regressions | `npm test` |
+| Lint | smells, footguns | eslint |
+| **Module Analyzer** | new debt, new cycles, lost coverage, blast radius | `analyze --base` |
+| Human review | intent, edge cases | the diff + the Impact report |
+
+A ready-to-use GitHub Actions workflow combining these layers is in [`.github/workflows/quality-gate.yml`](.github/workflows/quality-gate.yml). The PR gate step is one line:
+
+```yaml
+- run: npm run analyze -- ./src --base "origin/${{ github.base_ref }}" --fail-on-regression --max-risk 85
+```
 | `--json` | Machine-readable output |
 
 Exit codes: `0` ok · `1` threshold violation · `2` regression · `3` usage error.
